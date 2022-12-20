@@ -195,9 +195,7 @@ class AnalCertificate:
         self.read = data['Domain'].tolist()
     #------------------------------#    
     def get_cert(self):
-
         try:
-            deadline = time.time() + 10
             ctx = ssl.create_default_context()
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(3)
