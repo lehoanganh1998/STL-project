@@ -15,6 +15,7 @@ from ocspchecker import ocspchecker
 from OpenSSL import crypto
 import argparse
 
+
 import hashlib
 from cryptography.x509 import load_pem_x509_certificate
 
@@ -175,7 +176,7 @@ CIPHERS_list=[
 
 
 #++++++++++++++++++++++++++++++++++#
-class AnalCertificate:
+class analyzeCertificate:
     def __init__(self, host, port, holi, CIPHERS_list) -> None:
         self.host = host
         self.holi = holi
@@ -207,10 +208,8 @@ class AnalCertificate:
             self.version  = ssock.version()
             ssock.close()
             return True
-            
         except socket.timeout:
             raise Exception
-
     #------------------------------#
     def cipherv13(self):
         try:
@@ -251,6 +250,12 @@ class AnalCertificate:
                 continue
         if self.version == 'TLSv1.3':
             self.proto_check.append(self.version)
+        self.proto_csv = ''
+        for i in range(len(self.proto_check)):
+            if not i==(len(self.proto_check)-1):
+                self.proto_csv = self.proto_csv + self.proto_check[i] + ', '
+            else:
+                self.proto_csv = self.proto_csv + self.proto_check[i] 
     #------------------------------# 
     def proto_grade(self):
         proto_dict = {"TLSv1.3": 100, "TLSv1.2": 90, "TLSv1.1": 80, "TLSv1.0": 70, "SSLv2.3": 60,"UNKNOWN": 0}
@@ -260,19 +265,22 @@ class AnalCertificate:
         self.proto_Score = max(proto_values)
         if "TLSv1.0" in self.proto_check:
             self.proto_Score = self.proto_Score - 20
-    
     #------------------------------#
     def cert_object(self):
-        import OpenSSL
         self.cert_obj = load_pem_x509_certificate(bytes(self.pem,'utf-8'))
         self.PKeySize = self.cert_obj.public_key().key_size
         self.sig=self.cert_obj.signature_algorithm_oid._name
     #------------------------------#
     def OCSP_status(self):
-        self.status = ocspchecker.get_ocsp_status(self.host)   
+        self.status = ocspchecker.get_ocsp_status(self.host)  
+        self.ocspstat = '' 
+        if 'GOOD' in self.status[2]:
+            self.ocspstat = 'GOOD'
+        else:
+            self.ocspstat = 'REVOKED'
     #------------------------------#
-    def anal_info(self):
-        self.common_name = self.cert['issuer'][-1][0][-1]
+    def analyze_info(self):
+        self.issuer = self.cert['issuer'][-1][0][-1]
         self.expiry_day = datetime.strptime(self.cert['notAfter'], '%b %d %H:%M:%S %Y %Z')
         self.serialNum = self.cert['serialNumber']
         self.sha1thumb = hashlib.sha1(self.der).hexdigest()
@@ -286,7 +294,7 @@ class AnalCertificate:
         else:
             self.cert_Score = 100
     #------------------------------#    
-    def printAnal(self):
+    def printanalyze(self):
         if not self.holi:
             print('\nCertificate Score: ' + str(self.cert_Score))
             print('Protocol Score: ' + str(self.proto_Score))
@@ -296,7 +304,7 @@ class AnalCertificate:
             print('Overall Grade: ' + self.OverGrade + '\n')
             # ====================================== #
             print('Host name: ' + self.host)
-            print('Common name: ' + self.common_name)
+            print('Issuer: ' + self.issuer)
             print('Expiry date: ' + str(self.expiry_day) + ' (' + str((self.expiry_day-self.now).days) + ' days from today)')
             print('Serial number: ' + self.serialNum)
             print('SHA1 thumbprint: ' + self.sha1thumb) 
@@ -308,9 +316,7 @@ class AnalCertificate:
             self.print_cipher()
             return
         else:
-            return [str(self.host), str(self.cert_Score), str(self.proto_Score), str(self.bitPoint), str(self.ciphers_score), str(self.OverGrade), str()]
-            
-      
+            return [str(self.host), str(self.cert_Score), str(self.proto_Score), str(self.bitPoint), str(self.ciphers_score), str(self.OverGrade), self.issuer, self.serialNum, self.sha1thumb, self.sha256thumb, str(self.PKeySize), self.sig, self.ocspstat , str((self.expiry_day-self.now).days), self.proto_csv]   
     #------------------------------#
     def bit_grade(self):
         def roundup(a):
@@ -343,22 +349,19 @@ class AnalCertificate:
         print(str(len(self.Cipher_results))+'/145 ciphers found:')
         for cipher in self.Cipher_results:
             print('\t' + str(cipher))
-
     #------------------------------#
     def print_ocsp(self):
         print('OCSP status:')
         for i_stat in range(1,3):
             print('\t' + self.status[i_stat])
-
+        
     #------------------------------#
-    def Anal_all(self):
+    def analyze_all(self):
         self.get_cert()
         self.Cipher_results = self.get_cipher_list()
-      
         self.OCSP_status()
-        self.anal_info()
+        self.analyze_info()
         self.cert_object()
-        # self.crl_status()
         self.check_proto()
         self.cert_grade()
         self.cipherv13()
@@ -366,7 +369,7 @@ class AnalCertificate:
         self.cipher_grade()
         self.proto_grade()
         self.Overall()
-        return self.printAnal() 
+        return self.printanalyze() 
     #------------------------------#
     def Overall(self):
         self.Total = self.cert_Score + self.proto_Score + self.bitPoint + self.ciphers_score
@@ -398,9 +401,9 @@ class AnalCertificate:
         return Cipher_results
     #------------------------------#
     def saving_header(self):
-        return ['Domain', 'Certificate Score', 'Protocol Score', 'Key Score', 'Cipher Score', 'Overall Grade']
+        return ['Domain', 'Certificate Score', 'Protocol Score', 'Key Score', 'Cipher Score', 'Overall Grade', 'Issuer', 'Serial Number', 'SHA-1 Thumbprint', 'SHA-256 Thumbprint', 'Key Length', 'Signature Algorithm', 'OCSP Status', 'Days before expiring', 'Support Protocols']
     #------------------------------#
-    def Anal_host_check(self, host_name, save_file_csv):
+    def analyze_host_check(self, host_name, save_file_csv):
         data_check = pd.read_csv(save_file_csv, index_col=False)
         check_host = data_check['Domain'].tolist()
         if host_name in check_host:
@@ -409,7 +412,7 @@ class AnalCertificate:
     #------------------------------#
     def handle(self, save_file_csv):
         if not self.holi:
-                self.Anal_all()
+                self.analyze_all()
         else:
             csv_file = open(save_file_csv, 'a', encoding='UTF8')
             writer = csv.writer(csv_file)
@@ -420,9 +423,9 @@ class AnalCertificate:
             for i, host in enumerate(self.read):
                 print("{}/{} - current domain: {}".format(i+1, len(self.read), host))
                 try:
-                    if (num_row == 0) or (not self.Anal_host_check(host, save_file_csv)):
+                    if (num_row == 0) or (not self.analyze_host_check(host, save_file_csv)):
                         self.host = host
-                        host_result = self.Anal_all()
+                        host_result = self.analyze_all()
                         writer.writerow(host_result)
                         print('Done!!!!')
                         csv_file.flush()
@@ -435,9 +438,6 @@ class AnalCertificate:
                 
             csv_file.close()  
 #++++++++++++++++++++++++++++++++++# 
-
-
-
 class TlsAdapter(HTTPAdapter):
 
     def __init__(self, ssl_options=0, CIPHERS=None, **kwargs):
@@ -451,11 +451,9 @@ class TlsAdapter(HTTPAdapter):
                                        ssl_context=ctx,
                                        **pool_kwargs)
 #++++++++++++++++++++++++++++++++++# 
-
-
 if __name__ == '__main__':
     begin = time.time()
-    cert = AnalCertificate(args.host, args.port, args.holi, CIPHERS_list)
+    cert = analyzeCertificate(args.host, args.port, args.holi, CIPHERS_list)
     cert.handle(args.save_path_csv)
     print("Total time: {}".format(time.time()-begin))
    
